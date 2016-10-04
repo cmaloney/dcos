@@ -70,6 +70,7 @@ setup(
             'mkpanda=pkgpanda.build.cli:main',
             'dcos_installer=dcos_installer.cli:main',
             'dcos-launch=test_util.launch:main',
+            'dcos-int-dcos-install=gen.installer.bash.dcos_install:main'
         ],
     },
     package_data={
