@@ -3,15 +3,19 @@
 import argparse
 import copy
 import json
+import logging
 import os
 import os.path
 import shutil
 import subprocess
 import sys
 from collections import namedtuple
+from contextlib import contextmanager
 from functools import partial
 
 import pkgutil
+
+log = logging.getLogger(__name__)
 
 color_map = None
 
@@ -119,21 +123,18 @@ master_ports = {
     46839: 'metronome',
     61053: 'mesos-dns'}
 
-CheckFail = namedtuple('check_fail', ['message', 'details'])
+CheckResult = namedtuple('CheckResult', ['passed', 'message', 'details'])
 
 
 def fail(msg, **arguments):
-    return CheckFail(msg.format(**arguments), arguments)
+    return CheckResult(False, msg.format(**arguments), arguments)
 
 
-# Add a structured error message to the set of messages,
-def add_error(msg, **kwargs):
-    global errors
-    errors.append({'message': msg.format(**kwargs), 'details': kwargs})
+def success(msg, **arguments):
+    return CheckResult(True, msg.format(**arguments), arguments)
 
 
 def check_ports(is_agent):
-    print('Checking no ports required by DC/OS Components are in use')
     component_ports = copy.copy(common_ports)
     component_ports.update(agent_ports if is_agent else master_ports)
 
@@ -148,22 +149,22 @@ def check_ports(is_agent):
 
 
 def check_preexisting_dcos():
-    print('Checking if DC/OS is already on this host or is partially on the host still')
-
     # TODO(cmaloney): Check for /var/lib/dcos
     dcos_installed_files = [
         '/etc/systemd/system/dcos.target',
         '/etc/systemd/system/dcos.target.wants',
-        '/opt/mesosphere']
+        '/opt/mesosphere',
+        '/var/lib/dcos',
+        '/run/dcos']
 
-    found_files = list(filter(map(os.path.exists, dcos_installed_files)))
-
-    if found_files:
-        return fail('DC/OS Already installed on host. Found the following files: {found_files}', found_files)
+    for file in dcos_installed_files:
+        if os.path.exists(file):
+            yield success('No such folder', file)
+        else:
+            yield fail('Found folder from previous install: {}', file)
 
 
 def check_selinux():
-    print('Checking if SELinux is disabled')
     enabled = subprocess.check_output('getenforce').decode().strip()
     if enabled == 'Enforcing':
         return fail('SELinux is currently Enforcing, must be disabled for DC/OS to operate')
@@ -172,21 +173,19 @@ def check_selinux():
 def check_binary_in_path(name):
     # TODO(cmaloney): Need a better way to say "Checking X: <late-binding-status>".
     # Probably a context manager.
-    print('Checking if {} is installed and in PATH').format(name)
     path = shutil.which(name)
 
     if path is None:
-        raise fail('{} not found', name)
+        return fail('Missing dependency {}', name)
+    else:
+        return success('Found binary for dependecy {}'.format(name))
 
 
 def check_binaries_in_path():
     programs = ['curl', 'bash', 'ping', 'tar', 'xz', 'unzip', 'ipset', 'systemd-notify']
 
     for program in programs:
-        try:
-            check_binary_in_path(program)
-        except CheckFail as check_fail:
-            yield check_fail
+        yield check_binary_in_path(program, raise_on_error=False)
 
 
 def check_version(name, minimum, actual):
@@ -230,44 +229,123 @@ def check_role(role):
         return fail("Invalid role for host `{role}`. Allowed roles are: {all_roles}".format(role, roles_all))
 
 
-def do_preflight(role):
+class CheckCollector:
+
+    def __init__(self, message):
+        raise NotImplementedError()
+
+    def add_result():
+        raise NotImplementedError()
+
+    def __enter__(self):
+        return self
+
+
+class CheckBlock:
+
+    class _FailFast(BaseException):
+        pass
+
+    def __init__(self, collector, message):
+        self.collector = collector
+        self.message = message
+        self.results = list()
+        self.fail_fast = False
+
+    @contextmanager
+    def subblock(self, message):
+        block = CheckCollector(message)
+        self.results.append(block)
+
+        yield block
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception, exception_traceback):
+        # No exception the no-op
+        if isinstance(exception, None):
+            return
+
+        # Fail fast exception, consume the exception and return
+        if isinstance(exception, CheckBlock._FailFast):
+            return True
+
+        # Log the exception as a failure
+        # CheckResult -> just one normal result.
+        # Other standard exceptions logged
+        # Things not inherited by Exception mean exit / just pass by.
+        if isinstance(exception_type, CheckResult):
+            self.results.append(exception_type)
+        elif isinstance(exception, Exception):
+            self.results.append(fail('Error tyring to determine result: {}'.format(exception)))
+            log.debug("Unexpected exception closing CheckBlock", exc_info=True)
+
+    def has_failed(self):
+        return any([result.passed for result in self.results])
+
+    def log_result(self, result):
+        self.collector.log_result()
+        # check() may `return` a CheckResult, None, or be an iterable of CheckResults (yield CheckResult).
+        # They may also throw a single CheckResult to 'fail early' / for control flow.
+        if isinstance(result, CheckResult):
+            self.results.append(result)
+            if self.fail_fast:
+                if not result.passed:
+                    raise CheckBlock._FailFast
+        else:
+            new_results = list(result)
+            assert all(map(lambda x: isinstance(x, CheckResult), new_results)), \
+                "All check_*() functions should return, yield, or throw CheckResult. {}".format(new_results)
+
+            self.results += new_results
+
+
+class CheckCollector:
+
+    def __init__(self, name, show_all, output_filename):
+        self.show_all = show_all
+        self.output_filename = output_filename
+
+    @contextmanager
+    def subblock(self, name):
+        block = CheckBlock(self, name)
+        yield block
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception, exception_traceback):
+        return
+
+
+
+def do_preflight(role, show_all, output_file):
     print_section("Running preflight checks")
 
     checks = [
-        check_preexisting_dcos,
-        check_selinux,
-        check_binaries_in_path,
-        check_systemd_version,
-        check_docker_version,
-        check_nogroup,
-        partial(check_role, role),
-        partial(check_ports, role in roles_agent),
+        (check_preexisting_dcos, 'DC/OS should not already be installed'),
+        (check_selinux, 'SELinux should be disabled'),
+        (check_binaries_in_path, 'Binaries depended upon by DC/OS should be installed'),
+        (check_systemd_version, 'Systemd must be installed and above version 200'),
+        (check_docker_version, 'Docker must be installed and above version 1.7'),
+        (check_nogroup, 'The group `nogroup` should exist'),
+        (partial(check_role, role), 'Role should be a valid DC/OS role'),
+        (partial(check_ports, role in roles_agent), 'Ports required by components should not be in use'),
     ]
 
     # Run all checks and collect their error messages.
-    errors = list()
-    for check in checks:
-        # check() may `return` a CheckFail, None, or be an iterable of CheckFails (yield CheckFail).
-        # They may also throw a single CheckFail to 'fail early' / for control flow.
-        try:
-            result = check()
-            if isinstance(result, CheckFail) or isinstance(result, None):
-                errors.append(result)
-            else:
-                errors += list(result)
-        except CheckFail as result:
-            errors.append(result)
+    check_block = CheckBlock('DC/OS Node Pre-Flight', show_all=show_all, output_file=output_file)
+    with check_block:
+        for check, message in checks:
+            with check_binary_in_path.subblock(message) as collector:
+                collector.log_result(check())
 
-    # Make sure everything remaining is a CheckFail
-    assert all(map(lambda x: isinstance(x, CheckFail), errors)), \
-        "All check_*() functions should return, yield, or throw CheckFail objects. {}".format(errors)
+    # TODO(cmaloney): Print out results to screen, as well as logging to a json
+    # file for machine processing
+    raise NotImplementedError()
 
-    # TODO(cmaloney): Change return between json and printing based on requesetd
-    # options
-    for error in errors:
-        print_fail('FAIL: ' + error['msg'])
-
-    if errors:
+    if check_block.has_failed():
         sys.exit(1)
 
 
