@@ -229,18 +229,6 @@ def check_role(role):
         return fail("Invalid role for host `{role}`. Allowed roles are: {all_roles}".format(role, roles_all))
 
 
-class CheckCollector:
-
-    def __init__(self, message):
-        raise NotImplementedError()
-
-    def add_result():
-        raise NotImplementedError()
-
-    def __enter__(self):
-        return self
-
-
 class CheckBlock:
 
     class _FailFast(BaseException):
@@ -249,11 +237,14 @@ class CheckBlock:
     def __init__(self, collector, message):
         self.collector = collector
         self.message = message
-        self.results = list()
+        self.results = dict()
         self.fail_fast = False
 
     @contextmanager
     def subblock(self, message):
+        assert message not in results, "Same message used for multiple tests in the same chunk. " \
+            "Messages must be unique. Message: {}, used messages: {}".format(message, results)
+        results.a
         block = CheckCollector(message)
         self.results.append(block)
 
@@ -276,7 +267,11 @@ class CheckBlock:
         # Other standard exceptions logged
         # Things not inherited by Exception mean exit / just pass by.
         if isinstance(exception_type, CheckResult):
-            self.results.append(exception_type)
+            log_result(
+                "Unexpected Excpetion while testing: {exception}",
+                exception_type=exception_type,
+                exception=exception,
+                exception_traceback=exception_traceback)
         elif isinstance(exception, Exception):
             self.results.append(fail('Error tyring to determine result: {}'.format(exception)))
             log.debug("Unexpected exception closing CheckBlock", exc_info=True)
@@ -285,7 +280,6 @@ class CheckBlock:
         return any([result.passed for result in self.results])
 
     def log_result(self, result):
-        self.collector.log_result()
         # check() may `return` a CheckResult, None, or be an iterable of CheckResults (yield CheckResult).
         # They may also throw a single CheckResult to 'fail early' / for control flow.
         if isinstance(result, CheckResult):
@@ -301,22 +295,37 @@ class CheckBlock:
             self.results += new_results
 
 
-class CheckCollector:
+class CheckCollector(CheckBlock):
 
-    def __init__(self, name, show_all, output_filename):
+    def __init__(self, message, show_all, output_filename):
         self.show_all = show_all
         self.output_filename = output_filename
+        super().__init__(self, self, message)
+        self.results =
 
     @contextmanager
     def subblock(self, name):
         block = CheckBlock(self, name)
         yield block
 
-    def __enter__(self):
-        return self
+    def _result(self, context, result):
+        # Print the result to the screen indented by the number of layers of context. If this is
+        # deeper than the last context print a "section title"
+        raise NotImplementedError()
+
+
+    def write_report(self):
+        if output_filename is None:
+            return
+
+        # Write json report of messages to output filename
 
     def __exit__(self, exception_type, exception, exception_traceback):
-        return
+        result = super().__exit__(exception_type, exception, exception_traceback)
+
+        # If there's an exception, log it
+        self.write_report()
+        return result
 
 
 
