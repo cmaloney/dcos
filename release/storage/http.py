@@ -2,6 +2,7 @@ import os
 
 import requests
 
+from pkgpanda.util import download_chunked
 from release.storage import AbstractStorageProvider
 
 
@@ -32,12 +33,8 @@ class HttpStorageProvider(AbstractStorageProvider):
         local_path_tmp = '{}.tmp'.format(local_path)
         url = self._get_absolute(path)
         try:
-            with open(local_path_tmp, 'w+b') as f:
-                r = requests.get(url, stream=True)
-                r.raise_for_status()
-                for chunk in r.iter_content(chunk_size=4096):
-                    f.write(chunk)
-                os.rename(local_path_tmp, local_path)
+            download_chunked(local_path_tmp, url)
+            os.rename(local_path_tmp, local_path)
         except:
             # Delete the temp file, re-raise.
             try:
@@ -72,6 +69,7 @@ class HttpStorageProvider(AbstractStorageProvider):
     @property
     def read_only(self):
         return True
+
 
 factories = {
     'read': HttpStorageProvider

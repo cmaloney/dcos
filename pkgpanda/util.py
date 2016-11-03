@@ -41,6 +41,16 @@ def variant_prefix(variant):
     return variant + '.'
 
 
+def download_chunked(output_filename, url):
+    with open(output_filename, "w+b") as f:
+        r = requests.get(url, stream=True)
+        if r.status_code == 301:
+            raise Exception("got a 301")
+        r.raise_for_status()
+        for chunk in r.iter_content(chunk_size=4096):
+            f.write(chunk)
+
+
 def download(out_filename, url, work_dir):
     assert os.path.isabs(out_filename)
     assert os.path.isabs(work_dir)
@@ -59,13 +69,7 @@ def download(out_filename, url, work_dir):
             shutil.copyfile(src_filename, out_filename)
         else:
             # Download the file.
-            with open(out_filename, "w+b") as f:
-                r = requests.get(url, stream=True)
-                if r.status_code == 301:
-                    raise Exception("got a 301")
-                r.raise_for_status()
-                for chunk in r.iter_content(chunk_size=4096):
-                    f.write(chunk)
+            download_chunked(out_filename, url)
     except Exception as fetch_exception:
         rm_passed = False
 
