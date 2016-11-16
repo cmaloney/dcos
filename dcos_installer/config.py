@@ -1,12 +1,14 @@
 import copy
 import logging
 import os.path
+from collections import namedtuple
 
 import yaml
 
 import gen
-import ssh.validate
+import ssh.config
 from pkgpanda.util import write_string
+
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +25,40 @@ ssh_port: 22
 process_timeout: 10000
 bootstrap_url: file:///opt/dcos_install_tmp
 """
+
+
+InstallHosts = namedtuple('InstallHosts', ['master_list', 'agent_list', 'public_agent_list'])
+
+
+def compare_lists(first_json: str, second_json: str):
+    first_list = gen.calc.validate_json_list(first_json)
+    second_list = gen.calc.validate_json_list(second_json)
+    dups = set(first_list) & set(second_list)
+    assert not dups, 'master_list and agent_list cannot contain duplicates {}'.format(', '.join(dups))
+
+
+def validate_agent_lists(agent_list, public_agent_list):
+    compare_lists(agent_list, public_agent_list)
+
+
+install_host_source = gen.internals.Source({
+    'validate': [
+        lambda agent_list: gen.calc.validate_ip_list(agent_list),
+        lambda public_agent_list: gen.calc.validate_ip_list(public_agent_list),
+        lambda master_list: gen.calc.validate_ip_list(master_list),
+        # master list shouldn't contain anything in either agent lists
+        lambda master_list, agent_list: compare_lists(master_list, agent_list),
+        lambda master_list, public_agent_list: compare_lists(master_list, public_agent_list),
+        # the agent lists shouldn't contain any common items
+        lambda agent_list, public_agent_list: compare_lists(agent_list, public_agent_list),
+    ],
+    'default': {
+        'agent_list': '[]',
+        'public_agent_list': '[]',
+    }
+})
+
+install_host_target = gen.internals.Target.from_namedtuple(InstallHosts)
 
 
 def normalize_config_validation(messages):
@@ -103,7 +139,10 @@ class Config():
 
         if include_ssh:
             sources.append(ssh.validate.source)
-            targets.append(ssh.validate.target)
+            targets.append(ssh.validate.config_target)
+
+            # TODO(cmaloney): install_host_target should only apply if using the web / ssh installer.
+            targets.append(install_host_target)
 
         messages = gen.internals.validate_configuration(sources, targets, user_arguments)
         # TODO(cmaloney): kill this function and make the API return the structured
@@ -143,3 +182,19 @@ def to_config(config_dict: dict):
     config = Config(None)
     config.update(config_dict)
     return config
+
+
+# TODO(cmaloney): Work this API, callers until this result remapping is unnecessary
+# and the couple places that need this can just make a trivial call directly.
+def validate_ssh_config(user_arguments):
+    user_arguments = gen.stringify_configuration(user_arguments)
+    messages = gen.internals.validate_configuration([source], [target], user_arguments)
+    if messages['status'] == 'ok':
+        return {}
+
+    # Re-format to the expected format
+    # TODO(cmaloney): Make the unnecessary
+    final_errors = dict()
+    for name, message_blob in messages['errors'].items():
+        final_errors[name] = message_blob['message']
+    return final_errors

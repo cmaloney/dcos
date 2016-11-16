@@ -92,6 +92,10 @@ class Scope:
 
 class Target:
 
+    @staticmethod
+    def from_namedtuple(tuple_type):
+        return Target(variables=set(tuple_type._fields))
+
     # TODO(cmaloney): Make a better API for working with and managing sub scopes. The current
     # dictionary of dictionaries is really hard to use right.
     def __init__(self, variables=None, sub_scopes=None):

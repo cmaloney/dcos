@@ -4,7 +4,7 @@ import os
 import pty
 from contextlib import contextmanager
 
-import ssh.validate
+from ssh.config import Config
 from ssh.utils import CommandChain, JsonDelegate
 
 log = logging.getLogger(__name__)
@@ -51,32 +51,17 @@ class Node():
             ', '.join(['{}:{}'.format(k, v) for k, v in sorted(self.tags.items())]))
 
 
-def add_host(target):
+def as_node(target):
     if isinstance(target, Node):
         return target
     return Node(target)
 
 
 class MultiRunner():
-    def __init__(self, targets, async_delegate=None, ssh_user=None, ssh_key_path=None, extra_opts='',
-                 process_timeout=120, parallelism=10):
-        assert isinstance(targets, list)
-        # TODO(cmaloney): accept an "ssh_config" object which generates an ssh
-        # config file, then add a '-F' to that temporary config file rather than
-        # manually building up / adding the arguments in _get_base_args which is
-        # very error prone to get the formatting right. Should have just one
-        # host section which applies to all hosts, sets things like "user".
-        self.extra_opts = extra_opts
-        self.process_timeout = process_timeout
-        self.ssh_user = ssh_user
-        self.ssh_key_path = ssh_key_path
-        self.ssh_bin = '/usr/bin/ssh'
-        self.scp_bin = '/usr/bin/scp'
+    def __init__(self, targets: list, config: Config, async_delegate=None):
+        self.config = config
         self.async_delegate = async_delegate
-        self.__targets = []
-        for target in targets:
-            self.__targets.append(add_host(target))
-        self.__parallelism = parallelism
+        self.__targets = [as_node(target) for target in targets]
 
     def _get_base_args(self, bin_name, host):
         # TODO(cmaloney): Switch to SSH config file, documented above. A single
