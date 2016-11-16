@@ -3,7 +3,6 @@ Glue code for logic around calling associated backend
 libraries to support the dcos installer.
 """
 import logging
-from collections import namedtuple
 
 import boto3
 import botocore.exceptions

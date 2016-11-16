@@ -32,7 +32,7 @@ def parse_ip(ip):
 
 
 class Node():
-    def __init__(self, host, tags=dict()):
+    def __init__(self, host: str, tags: dict):
         assert isinstance(tags, dict)
         self.tags = tags
         self.host = parse_ip(host)

@@ -110,6 +110,7 @@ def test_ssh_async(sshd_manager, loop):
         def prepare_status(self, name, nodes):
             pass
 
+
     with sshd_manager.run(20) as sshd_ports:
         runner = MultiRunner(['127.0.0.1:{}'.format(port) for port in sshd_ports], ssh_user=getpass.getuser(),
                              ssh_key_path=sshd_manager.key_path, async_delegate=DummyAsyncDelegate())

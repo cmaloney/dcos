@@ -7,6 +7,48 @@ import os
 log = logging.getLogger(__name__)
 
 
+class Chain:
+    def __init__(self, name):
+        self._name = name
+        self._steps = list()
+
+    def write_file(self, filename, description, contents=None):
+        step_info = {
+            'action': 'copy',
+            'description': description,
+            'arguments': {
+                'filename': filename
+            }
+        }
+        if contents is not None:
+            step_info['cmd_args']['contents'] = contents
+        self._steps.append(step_info)
+
+    def run(self, filename, description, args=[], parameterized=False, external_command=False):
+        self._steps.append({
+            'action': 'run',
+            'description': description,
+            'arguments': {
+                'filename': filename,
+                'args': args,
+                'parameterized': parameterized,
+                'external_command': external_command
+            }
+        })
+
+    def copy_and_run(self, contents, filename, description, args=[], parameterized=False):
+        self.copy(filename=filename, contents=contents, description="Creating script to run")
+        self.run(filename, description=description, args=args, parameterized=parameterized)
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def steps(self):
+        return self._steps
+
+
 class CommandChain():
     '''
     Add command to execute on a remote host.

@@ -1,7 +1,6 @@
 import copy
 import logging
 import os.path
-from collections import namedtuple
 
 import yaml
 
@@ -25,9 +24,6 @@ ssh_port: 22
 process_timeout: 10000
 bootstrap_url: file:///opt/dcos_install_tmp
 """
-
-
-InstallHosts = namedtuple('InstallHosts', ['master_list', 'agent_list', 'public_agent_list'])
 
 
 def compare_lists(first_json: str, second_json: str):
@@ -58,7 +54,13 @@ install_host_source = gen.internals.Source({
     }
 })
 
-install_host_target = gen.internals.Target.from_namedtuple(InstallHosts)
+
+def get_installer_target():
+    return gen.internals.Target({
+        'master_list',
+        'agent_list',
+        'public_agent_list'
+    })
 
 
 def normalize_config_validation(messages):

@@ -29,8 +29,6 @@ source = Source({
         'ssh_process_timeout': '120',
         'ssh_parallelism': '20',
         'extra_ssh_options': '',
-        'ssh_binary_path': '/usr/bin/ssh',
-        'scp_binary_path': '/usr/bin/scp'
     }
 })
 
@@ -48,8 +46,12 @@ Config = namedtuple('Config', [
     'extra_ssh_options'])
 
 # TODO(cmaloney): Should be able to ask the target to give back the namedtuple with the items.
-config_target = Target.from_namedtuple(Config)
+config_target = Target.from_function(make_runner)
 
+
+# TODO(cmaloney): Ideally can just include defaults here and have a source auto-built.
+def make_runner(ssh_user, ssh_port, ssh_key_path, ssh_parallelism, extra_ssh_options):
+    raise NotImplementedError()
 
 def make_config(config_target: Target):
     return Config(**config_target.arguments)
