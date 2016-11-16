@@ -53,5 +53,6 @@ config_target = Target.from_function(make_runner)
 def make_runner(ssh_user, ssh_port, ssh_key_path, ssh_parallelism, extra_ssh_options):
     raise NotImplementedError()
 
+
 def make_config(config_target: Target):
     return Config(**config_target.arguments)
