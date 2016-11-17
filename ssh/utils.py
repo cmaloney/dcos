@@ -24,7 +24,10 @@ class Chain:
             step_info['cmd_args']['contents'] = contents
         self._steps.append(step_info)
 
-    def run(self, filename, description, args=[], parameterized=False, external_command=False):
+    def run(self, filename, description, args=None, parameterized=False):
+        if args is None:
+            args = list()
+
         self._steps.append({
             'action': 'run',
             'description': description,
@@ -32,7 +35,16 @@ class Chain:
                 'filename': filename,
                 'args': args,
                 'parameterized': parameterized,
-                'external_command': external_command
+            }
+        })
+
+    def run_external(self, cmd, description, parameterized=False):
+        self._steps.append({
+            'action': 'run_external',
+            'description': description,
+            'arguments': {
+                'cmd': cmd,
+                'parameterized': parameterized
             }
         })
 

@@ -47,36 +47,62 @@ class CommandBuilder:
 
         return port
 
+    def _make_ssh(self, node, base_args, cmd, parameterized):
+
+        if parameterized:
+            cmd = [arg.format(**node.tags) for arg in cmd]
+
+        return ['ssh'] + base_args + ['{}@{}'.format(self.default_user, node.ip)] + cmd
+
+    # TODO(cmaloney): This and the current make_run should actually just call to
+    # a common helper, rather than this depending on a bunch of special flags on
+    # make_run (external_command).
+    def make_run_external(self, node, base_args, cmd):
+        return self._make_ssh(node, base_args, cmd)
+
+    def _run_helper(self, node, cmd, description):
+        return self.get_cmd(node, 'run_external', description, {'cmd': cmd})
+
+    def yield_setup(self, node: Node):
+        yield self._run_helper(
+            node,
+            ['sudo', 'mkdir', '-p', self.remote_work_dir],
+            'Creating temporary work directory')
+
+        yield self._run_helper(
+            node,
+            ['sudo', 'chown', self.default_user, self.remote_work_dir],
+            'Ensuring {} owns temporary work directory'.format(self.default_user))
+
+    def make_cleanup(self, node: Node):
+        return self._run_helper(
+            node,
+            ['sudo', 'rm', '-rf', self.remote_work_dir],
+            'Cleaning up temporary work directory')
+
     def make_copy(self, node, base_args, filename):
         remote_path = self.remote_work_dir + '/' + filename
 
         return ['scp', '-tt', '-P{}'.format(self.get_port(node))] + base_args + \
             [filename, '{}@{}:{}'.format(self.default_user, node.ip, remote_path)]
 
-    def make_run(self, node, base_args, filename, args=None, parameterized=False, external_command=False):
+    def make_run(self, node, base_args, filename, args, parameterized):
         if args is None:
             args = list()
 
-        if parameterized:
-            args = [arg.format(**node.tags) for arg in args]
+        return self._make_ssh(node, base_args, ['bash', self.remote_work_dir + '/' + filename] + args, parameterized)
 
-        if external_command:
-            cmd_to_run = filename
-        else:
-            cmd_to_run = ['bash', self.remote_work_dir + '/' + filename]
-
-        return ['ssh'] + base_args + ['{}@{}'.format(self.default_user, node.ip)] + cmd_to_run + args
-
-    def make_cmd(self, node: Node, action: str, description: str, arguments: dict):
+    def get_cmd(self, node: Node, action: str, description: str, arguments: dict):
         # TODO(cmaloney): use the description somewhere....
 
         base_args = ['-oConnectTimeout=10', '-oStrictHostKeyChecking=no',
                      '-oUserKnownHostsFile=/dev/null', '-oBatchMode=yes', '-oPasswordAuthentication=no',
                      '-i', self.key_path] + self.extra_options
 
-        {
+        return {
             'copy': self.make_copy,
-            'run': self.make_run
+            'run': self.make_run,
+            'run_external': self.make_run_external
         }[action](node, base_args, **arguments)
 
 

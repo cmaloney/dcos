@@ -9,7 +9,7 @@ CLUSTER_PACKAGES_FILE = 'genconf/cluster_packages.json'
 
 log = logging.getLogger(__name__)
 
-preflight_script = """#!/usr/bin/env bash
+prerequisites_script = """#!/usr/bin/env bash
 # setenforce is in this path
 PATH=$PATH:/sbin
 
@@ -94,7 +94,7 @@ exit $RETCODE
 
 def add_prerequisites(chain, options):
     # TODO(cmaloney): Move preflight marker checking outside of the prereqs script?
-    chain.copy_and_run(preflight_script)
+    chain.copy_and_run(prerequisites_script)
 
 
 def add_preflight(chain, options):
@@ -111,7 +111,6 @@ def add_install(chain, options):
     # TODO(cmaloney): Remove stale dcos bits?
     # TODO(cmaloney): pipe in bootstrap_id from config.
     chain.copy(filename='genconf/serve/bootstrap/{}.bootstrap.tar.xz'.format(os.getenv['BOOTSTRAP_ID']))
-    chain.copy(filename="genconf/serve/dcos_install.sh")
     for package in pkgpanda.load_json("genconf/cluster_packages.json"):
         chain.copy(filename='packages/{}.tar.xz'.format(package))
     chain.copy_and_run(
@@ -119,18 +118,15 @@ def add_install(chain, options):
         args=['{{role}}'],
         description='Installing DC/OS on host',
         parameterized=True)
-    chain.run_parameterized('genconf/serve/dcos_install.sh', args=["{{role}}"])
 
 
 def add_postflight(chain, options):
     chain.copy_and_run(contents=dcos_diag_script, filename='dcos_diag.sh', description='Waiting for host to come up')
 
     # Cleanup leftover file from if we installed prereqs
-    chain.run(
-        filename='sudo',
-        args=['rm', '-f', '/opt/dcos-prereqs.installed'],
-        description='Removing prerequisites flag',
-        external_command=True)
+    chain.run_external(
+        ['sudo', 'rm', '-f', '/opt/dcos-prereqs.installed'],
+        'Removing prerequisites flag')
 
 
 def add_preflight_web(chain, options):
