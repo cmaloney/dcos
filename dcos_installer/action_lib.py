@@ -205,7 +205,6 @@ def install_dcos(
         state_json_dir=None,
         hosts: Optional[list]=None,
         async_delegate=None,
-        try_remove_stale_dcos=False,
         **kwargs):
     if hosts is None:
         hosts = []
@@ -238,16 +237,6 @@ def install_dcos(
 
     runner = get_async_runner(config, targets, async_delegate=async_delegate)
     chains = []
-    if try_remove_stale_dcos:
-        pkgpanda_uninstall_chain = ssh.utils.CommandChain('remove_stale_dcos')
-        pkgpanda_uninstall_chain.add_execute(['sudo', '-i', '/opt/mesosphere/bin/pkgpanda', 'uninstall'],
-                                             stage='Trying pkgpanda uninstall')
-        chains.append(pkgpanda_uninstall_chain)
-
-        remove_dcos_chain = ssh.utils.CommandChain('remove_stale_dcos')
-        remove_dcos_chain.add_execute(['rm', '-rf', '/opt/mesosphere', '/etc/mesosphere'],
-                                      stage="Removing DC/OS files")
-        chains.append(remove_dcos_chain)
 
     chain = ssh.utils.CommandChain('deploy')
     chains.append(chain)
@@ -319,29 +308,6 @@ exit $RETCODE"""
     result = yield from pf.run_commands_chain_async([postflight_chain, cleanup_chain], block=block,
                                                     state_json_dir=state_json_dir,
                                                     delegate_extra_params=nodes_count_by_type(config))
-    return result
-
-
-@asyncio.coroutine
-def uninstall_dcos(config, block=False, state_json_dir=None, async_delegate=None, options=None):
-    targets = get_full_nodes_list(config)
-
-    # clean the file to all targets
-    runner = get_async_runner(config, targets, async_delegate=async_delegate)
-    uninstall_chain = ssh.utils.CommandChain('uninstall')
-
-    uninstall_chain.add_execute([
-        'sudo',
-        '-i',
-        '/opt/mesosphere/bin/pkgpanda',
-        'uninstall',
-        '&&',
-        'sudo',
-        'rm',
-        '-rf',
-        '/opt/mesosphere/'], stage='Uninstalling DC/OS')
-    result = yield from runner.run_commands_chain_async([uninstall_chain], block=block, state_json_dir=state_json_dir)
-
     return result
 
 

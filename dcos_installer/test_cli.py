@@ -32,8 +32,11 @@ def test_set_arg_parser():
     assert parser.action == 'deploy'
     parser = parse_args(['--validate-config'])
     assert parser.action == 'validate-config'
-    parser = parse_args(['--uninstall'])
-    assert parser.action == 'uninstall'
+
+    # Uninstall has been removed
+    with pytest.raises(SystemExit):
+        parser = parse_args(['--uninstall'])
+
     parser = parse_args(['--hash-password', 'foo'])
     assert parser.password == 'foo'
     assert parser.action == 'hash-password'

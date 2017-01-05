@@ -248,7 +248,6 @@ def action_action_name(request):
                                 Config(CONFIG_PATH),
                                 state_json_dir=STATE_DIR,
                                 hosts=failed_hosts,
-                                try_remove_stale_dcos=True,
                                 **params))
                         return web.json_response({
                             'status': 'retried',
